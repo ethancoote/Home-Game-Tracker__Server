@@ -14,7 +14,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-const db = startDB();
+const db = await startDB();
 
 // get
 app.get('/api/game/:gameId', (req, res) => {

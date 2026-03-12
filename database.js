@@ -1,6 +1,20 @@
 import sqlite3 from 'sqlite3';
+import fs from 'fs/promises';
 
-export function startDB () {
+export async function startDB () {
+    // create DB if it doesn't exist
+    try {
+        const file = await fs.open('./database.db', 'wx');
+        console.log(`Database created successfully.`);
+        await file.close();
+    } catch (err) {
+        if (err.code === 'EEXIST') {
+            console.log("Database already exists.");
+        } else {
+            console.error(err);
+        }
+    }
+
     const db = new sqlite3.Database('./database.db', sqlite3.OPEN_READWRITE, (err) => {
         if (err) {
             return console.error(err);
@@ -213,3 +227,4 @@ export function deletePlayer (db, {playerId}, cb) {
         cb(200, { playerId })
     });
 }
+
