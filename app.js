@@ -1,20 +1,21 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { getGame, startDB, getPlayers, getSessions, setSession, setPlayer, updateProfileImg, setGame, updatePlayerName, deletePlayer, getRecentSession } from './database.js';
+import { getGame, startDB, initDB, getPlayers, getSessions, setSession, setPlayer, updateProfileImg, setGame, updatePlayerName, deletePlayer, getRecentSession } from './database.js';
 import { r2, uploadImage } from './r2.js';
+
+const db = await startDB();
+initDB(db);
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 //middleware
 const corsOptions = {
-    origin: ['http://localhost:4321'],
+    origin: ['https://home-game-tracker.ecwebdev.ca', /*'http://localhost:4321'*/], // localhost for dev only
 }
 app.use(cors(corsOptions));
 app.use(express.json());
-
-const db = await startDB();
 
 // get
 app.get('/api/game/:gameId', (req, res) => {

@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 export async function startDB () {
     // create DB if it doesn't exist
     try {
-        const file = await fs.open('./database.db', 'wx');
+        const file = await fs.open('./database/database.db', 'wx');
         console.log(`Database created successfully.`);
         await file.close();
     } catch (err) {
@@ -15,7 +15,7 @@ export async function startDB () {
         }
     }
 
-    const db = new sqlite3.Database('./database.db', sqlite3.OPEN_READWRITE, (err) => {
+    const db = new sqlite3.Database('./database/database.db', sqlite3.OPEN_READWRITE, (err) => {
         if (err) {
             return console.error(err);
         }

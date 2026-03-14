@@ -27,7 +27,7 @@ export async function uploadImage(r2, file, key) {
         );
         return 1;
     } catch (err) {
-        console.error(err);
+        console.error(`updateImage failed upload to R2 - ${err}`);
         return null;
     }
 }
