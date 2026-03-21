@@ -1,8 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
-import { getGame, startDB, initDB, getPlayers, getSessions, setSession, setPlayer, updateProfileImg, setGame, updatePlayerName, deletePlayer, getRecentSession } from './database.js';
+import cookieParser from 'cookie-parser';
+import { getGame, startDB, initDB, getPlayers, getSessions, setSession, setPlayer, updateProfileImg, setGame, updatePlayerName, deletePlayer, getRecentSession, setUser, getUser, setUserSession, deleteUserSession, getUserSession, verifyGameOwner, deleteUnusedSessions, refreshUserSession } from './database.js'; //REFACTOR JESUS
 import { r2, uploadImage } from './r2.js';
+import bcrypt from 'bcrypt';
 
 const db = await startDB();
 initDB(db);
@@ -12,10 +14,39 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 //middleware
 const corsOptions = {
-    origin: ['https://home-game-tracker.ecwebdev.ca', /*'http://localhost:4321'*/], // localhost for dev only
+    origin: ['https://home-game-tracker.ecwebdev.ca', 'http://localhost:4321'], // localhost for dev only // add env var
+    credentials: true 
 }
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use(cookieParser());
+
+function requireAuth (req, res, next) {
+    const token = req.cookies['session_token'];
+    if (!token) {
+        console.log('Session auth not found.');
+        res.status(401).send({res: 'session token not found'});
+        return null;
+    }
+    getUserSession(db, {token}, (userSession) => {
+        if (userSession) {
+            res.userId = userSession.user_id;
+            refreshUserSession(db, {token}, (sessionToken, expiresAt) => {
+                res.cookie('session_token', sessionToken, {
+                    httpOnly: true,
+                    secure: true,
+                    sameSite: 'lax',
+                    expires: expiresAt
+                });
+                next();
+            });
+        } else {
+            console.log('Unverified user');
+            res.status(401).send({res: 'Unverified user'});
+            return null;
+        }
+    });
+}
 
 // get
 app.get('/api/game/:gameId', (req, res) => {
@@ -51,16 +82,28 @@ app.post('/api/sessions/:playerId', (req, res) => {
     }
 });
 
-app.post('/api/players/:gameId', (req, res) => {
+app.post('/api/players/:gameId', requireAuth, (req, res) => {
+    const userId = res.userId;
     const gameId = req.params.gameId;
     const name = req.body.name;
-    if (setPlayer(db, {name, gameId})) {
-        console.log(`New player created - game: ${gameId} name: ${name}`);
-        res.status(200).send({res: "success"});
-    } else {
-        console.error("Failed to create new player.");
-        res.status(400).send({res: "bad request"});
-    }
+
+    verifyGameOwner(db, {userId, gameId}, (verified) => {
+        if (verified) {
+            setPlayer(db, {name, gameId}, (status, val) => {
+                res.status(status).send(val);
+            });
+        } else {
+            res.status(500).send({res: 'user_id does not match game owner.'});
+        }
+    });
+    
+    // if () {
+    //     console.log(`New player created - game: ${gameId} name: ${name}`);
+    //     res.status(200).send({res: "success"});
+    // } else {
+    //     console.error("Failed to create new player.");
+    //     res.status(400).send({res: "bad request"});
+    // }
 });
 
 app.post('/api/profile/:playerId', upload.single("profile-img"), async (req, res) => {
@@ -97,6 +140,44 @@ app.post('/api/player/:playerId', (req, res) => {
 app.delete('/api/player/:playerId', (req, res) => {
     const playerId = req.params.playerId;
     deletePlayer(db, { playerId }, (status, obj) => res.status(status).send(obj));
+});
+
+// auth
+app.post('/login', (req, res) => {
+    const user = req.body.user;
+    const pass = req.body.pass;
+    getUser(db, { username: user }, async (status, userData) => {
+        // verify pass
+        if (userData && await bcrypt.compare(pass, userData.pass)) {
+            // create session token
+            setUserSession(db, { username: user }, (token, expiresAt) => {
+                res.cookie('session_token', token, {
+                    httpOnly: true,
+                    secure: true,
+                    sameSite: 'lax',
+                    expires: expiresAt
+                });
+                res.status(200).send({res: 'login success'});
+            });
+        } else {
+            res.status(401).send({res: 'username or password is incorrect.'});
+        }
+    });
+});
+
+app.post('/signup', async (req, res) => {
+    const user = req.body.user;
+    const pass = req.body.pass;
+    const passHash = await bcrypt.hash(pass, 11);
+    setUser(db, {username: user, passHash}, (status, obj) => res.status(status).send(obj));
+});
+
+app.post('/logout', (req, res) => {
+    const token = req.cookies['session_token'];
+    deleteUserSession(db, {token}, (status) => {
+        res.clearCookie('session_token');
+        res.status(status).send({ res: 'logged out' });
+    });
 });
 
 app.listen(8080, () => {
