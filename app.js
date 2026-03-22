@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import cookieParser from 'cookie-parser';
-import { getGame, startDB, initDB, getPlayers, getSessions, setSession, setPlayer, updateProfileImg, setGame, updatePlayerName, deletePlayer, getRecentSession, setUser, getUser, setUserSession, deleteUserSession, getUserSession, verifyGameOwner, deleteUnusedSessions, refreshUserSession } from './database.js'; //REFACTOR JESUS
+import { getGame, startDB, initDB, getPlayers, getSessions, setSession, setPlayer, updateProfileImg, setGame, updatePlayerName, deletePlayer, getRecentSession, setUser, getUser, setUserSession, deleteUserSession, getUserSession, verifyGameOwner, refreshUserSession, getUserById } from './database.js'; //REFACTOR JESUS
 import { r2, uploadImage } from './r2.js';
 import bcrypt from 'bcrypt';
 
@@ -30,7 +30,8 @@ function requireAuth (req, res, next) {
     }
     getUserSession(db, {token}, (userSession) => {
         if (userSession) {
-            res.userId = userSession.user_id;
+            req.userId = userSession.user_id;
+            console.log(`userSession userId: ${userSession.user_id}`);
             refreshUserSession(db, {token}, (sessionToken, expiresAt) => {
                 res.cookie('session_token', sessionToken, {
                     httpOnly: true,
@@ -46,6 +47,15 @@ function requireAuth (req, res, next) {
             return null;
         }
     });
+}
+
+// This is for UI. This does not authorize the user.
+function isLoggedIn (req) {
+    const token = req.cookies['session_token'];
+    if (!token) {
+        return false;
+    }
+    return true;
 }
 
 // get
@@ -69,6 +79,24 @@ app.get('/api/sessions/previous/:playerId', (req, res) => {
     getRecentSession(db, { playerId }, (status, obj) => res.status(status).send(obj));
 });
 
+app.get('/api/user', requireAuth, (req, res) => {
+    const userId = req.userId;
+    console.log(userId);
+    getUserById(db, {userId}, (status, user) => res.status(status).send({ 
+        user_id: user.user_id,
+        username: user.username,
+    }));
+});
+
+app.get('/api/verify', (req, res) => {
+    const loggedIn = isLoggedIn(req);
+    if (!loggedIn) {
+        res.status(200).send({ verified: false });
+    } else {
+        res.status(200).send({ verified: true });
+    }
+});
+
 // post
 app.post('/api/sessions/:playerId', (req, res) => {
     const playerId = req.params.playerId;
@@ -83,7 +111,7 @@ app.post('/api/sessions/:playerId', (req, res) => {
 });
 
 app.post('/api/players/:gameId', requireAuth, (req, res) => {
-    const userId = res.userId;
+    const userId = req.userId;
     const gameId = req.params.gameId;
     const name = req.body.name;
 
@@ -96,14 +124,6 @@ app.post('/api/players/:gameId', requireAuth, (req, res) => {
             res.status(500).send({res: 'user_id does not match game owner.'});
         }
     });
-    
-    // if () {
-    //     console.log(`New player created - game: ${gameId} name: ${name}`);
-    //     res.status(200).send({res: "success"});
-    // } else {
-    //     console.error("Failed to create new player.");
-    //     res.status(400).send({res: "bad request"});
-    // }
 });
 
 app.post('/api/profile/:playerId', upload.single("profile-img"), async (req, res) => {
@@ -124,8 +144,9 @@ app.post('/api/profile/:playerId', upload.single("profile-img"), async (req, res
     }
 });
 
-app.post('/api/game/:userId', (req, res) => {
-    const userId = req.params.userId;
+app.post('/api/game/create', requireAuth, (req, res) => {
+    const userId = req.userId;
+    console.log(`userid: ${userId}`);
     const name = req.body.name;
     setGame(db, { ownerId: userId, title: name }, (status, obj) => res.status(status).send(obj));
 });
@@ -168,8 +189,13 @@ app.post('/login', (req, res) => {
 app.post('/signup', async (req, res) => {
     const user = req.body.user;
     const pass = req.body.pass;
-    const passHash = await bcrypt.hash(pass, 11);
-    setUser(db, {username: user, passHash}, (status, obj) => res.status(status).send(obj));
+    if (user.length < 3 || pass.length < 6) {
+        res.status(400).send({res: 'Invalid credendials.'});
+    } else {
+        const passHash = await bcrypt.hash(pass, 11);
+        setUser(db, {username: user, passHash}, (status, obj) => res.status(status).send(obj));
+    }
+    
 });
 
 app.post('/logout', (req, res) => {

@@ -83,15 +83,22 @@ export function clearDB (db) {
 
 //setters
 export function setUser (db, {username, passHash}, cb) {
-    const sql = `INSERT INTO users (username, pass) VALUES (?, ?)`;
+    const sql = `INSERT OR IGNORE INTO users (username, pass) VALUES (?, ?)`;
     const prepStatement = db.prepare(sql);
-    prepStatement.run(username, passHash, (err) => {
+    prepStatement.run(username, passHash, function (err) {
         if (err) {
             console.error(err);
             cb(500, {res: "error"});
+            return null;
         }
-        console.log(`New user created - ${username}`);
-        cb(200, {res: "new user created"});
+        
+        if (this.changes) {
+            console.log(`New user created - ${username}`);
+            cb(200, {res: "new user created"});
+        } else {
+            console.log(`User already exists - ${username}`);
+            cb(409, {res: "error"});
+        }
     });
 }
 
@@ -172,6 +179,18 @@ export function getUser (db, {username}, cb) {
     const sql = `SELECT * FROM users WHERE username = ?`;
     const prepStatement = db.prepare(sql);
     prepStatement.get(username, (err, user) => {
+        if (err) {
+            console.error(err);
+            cb(401, {});
+        }
+        cb(200, user);
+    });
+}
+
+export function getUserById (db, {userId}, cb) {
+    const sql = `SELECT * FROM users WHERE user_id = ?`;
+    const prepStatement = db.prepare(sql);
+    prepStatement.get(userId, (err, user) => {
         if (err) {
             console.error(err);
             cb(401, {});
