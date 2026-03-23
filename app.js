@@ -31,7 +31,6 @@ function requireAuth (req, res, next) {
     getUserSession(db, {token}, (userSession) => {
         if (userSession) {
             req.userId = userSession.user_id;
-            console.log(`userSession userId: ${userSession.user_id}`);
             refreshUserSession(db, {token}, (sessionToken, expiresAt) => {
                 res.cookie('session_token', sessionToken, {
                     httpOnly: true,
@@ -81,7 +80,6 @@ app.get('/api/sessions/previous/:playerId', (req, res) => {
 
 app.get('/api/user', requireAuth, (req, res) => {
     const userId = req.userId;
-    console.log(userId);
     getUserById(db, {userId}, (status, user) => res.status(status).send({ 
         user_id: user.user_id,
         username: user.username,
@@ -98,16 +96,21 @@ app.get('/api/verify', (req, res) => {
 });
 
 // post
-app.post('/api/sessions/:playerId', (req, res) => {
+app.post('/api/sessions/:playerId', requireAuth, (req, res) => {
     const playerId = req.params.playerId;
     const profit = req.body.profit;
-    if (setSession(db, {playerId, profit})) {
-        console.log(`New session created - player: ${playerId} profit: ${profit}`);
-        res.status(200).send({res: "success"});
-    } else {
-        console.error("Failed to create new session.");
-        res.status(400).send({res: "bad request"});
-    }
+    const gameId = req.body.gameId;
+    const userId = req.userId;
+
+    verifyGameOwner(db, { userId, gameId }, (verified) => {
+        if (verified) {
+            setSession(db, {playerId, profit});
+            console.log(`New session created - player: ${playerId} profit: ${profit}`);
+            res.status(200).send({res: "success"});
+        } else {
+            res.status(500).send({res: 'user_id does not match game owner.'});
+        }
+    })
 });
 
 app.post('/api/players/:gameId', requireAuth, (req, res) => {
@@ -126,41 +129,67 @@ app.post('/api/players/:gameId', requireAuth, (req, res) => {
     });
 });
 
-app.post('/api/profile/:playerId', upload.single("profile-img"), async (req, res) => {
+app.post('/api/profile/:playerId', requireAuth, upload.single("profile-img"), async (req, res) => {
     const playerId = req.params.playerId;
     const file = req.file;
+    const userId = req.userId;
+    const gameId = req.body.gameId;
     const key = `players/${playerId}/${file.originalname}`;
-    if (await uploadImage(r2, file, key)) {
-        console.log(`Profile image stored in r2 - player: ${playerId}`);
-        if (updateProfileImg(db, {imgUrl: `${process.env.R2_PUBLIC_DOMAIN}/${key}`, playerId})) {
-            console.log("Database updated") 
-            res.status(200).send({res: "success"});
+    verifyGameOwner(db, { gameId, userId }, async (verified) => {
+        if (verified) {
+            if (await uploadImage(r2, file, key)) {
+                console.log(`Profile image stored in r2 - player: ${playerId}`);
+                if (updateProfileImg(db, {imgUrl: `${process.env.R2_PUBLIC_DOMAIN}/${key}`, playerId})) {
+                    console.log("Database updated") 
+                    res.status(200).send({res: "success"});
+                } else {
+                    console.error("Failed to update database.");
+                }
+            } else {
+                console.error("Failed to upload player image.");
+                res.status(500).send({res: "upload failed"});
+            }
         } else {
-            console.error("Failed to update database.");
+            res.status(500).send({res: 'user_id does not match game owner.'});
         }
-    } else {
-        console.error("Failed to upload player image.");
-        res.status(500).send({res: "upload failed"});
-    }
+    });
+    
 });
 
 app.post('/api/game/create', requireAuth, (req, res) => {
     const userId = req.userId;
-    console.log(`userid: ${userId}`);
     const name = req.body.name;
     setGame(db, { ownerId: userId, title: name }, (status, obj) => res.status(status).send(obj));
 });
 
-app.post('/api/player/:playerId', (req, res) => {
+app.post('/api/player/:playerId', requireAuth, (req, res) => {
     const playerId = req.params.playerId;
     const name = req.body.name;
-    updatePlayerName(db, { playerId, name }, (status, obj) => res.status(status).send(obj));
+    const userId = req.userId;
+    const gameId = req.body.gameId;
+
+    verifyGameOwner(db, {userId, gameId}, (verified) => {
+        if (verified) {
+            updatePlayerName(db, { playerId, name }, (status, obj) => res.status(status).send(obj));
+        } else {
+            res.status(500).send({res: 'user_id does not match game owner.'});
+        }
+    });
+    
 });
 
 // delete
-app.delete('/api/player/:playerId', (req, res) => {
+app.delete('/api/player/:playerId', requireAuth, (req, res) => {
     const playerId = req.params.playerId;
-    deletePlayer(db, { playerId }, (status, obj) => res.status(status).send(obj));
+    const gameId = req.body.gameId;
+    const userId = req.userId;
+    verifyGameOwner(db, { gameId, userId }, (verified) => {
+        if (verified) {
+            deletePlayer(db, { playerId }, (status, obj) => res.status(status).send(obj));
+        } else {
+            res.status(500).send({res: 'user_id does not match game owner.'});
+        }
+    });
 });
 
 // auth

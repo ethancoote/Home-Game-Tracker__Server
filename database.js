@@ -343,8 +343,6 @@ export function verifyGameOwner (db, {userId, gameId}, cb) {
             console.error(err);
             return null;
         }
-        console.log(userId);
-        console.log(user.owner_id);
         if (userId === user.owner_id) {
             cb(true);
         } else {
