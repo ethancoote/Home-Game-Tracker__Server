@@ -14,7 +14,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 //middleware
 const corsOptions = {
-    origin: ['https://home-game-tracker.ecwebdev.ca', 'http://localhost:4321'], // localhost for dev only // add env var
+    origin: ['https://home-game-tracker.ecwebdev.ca', /*'http://localhost:4321'*/], // localhost for dev only // add env var
     credentials: true 
 }
 app.use(cors(corsOptions));
